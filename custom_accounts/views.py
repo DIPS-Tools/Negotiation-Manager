@@ -43,6 +43,7 @@ from keycloak_auth.user_mapping import build_full_name, resolve_local_session_us
 
 from PolicyEngine.Parsers import ODRLParser
 from PolicyEngine.Translators import LogicTranslator
+
 from constract_service.contract_service import ContractAPIService
 # contract service
 from custom_accounts.ajax_ontology import (
@@ -1853,6 +1854,7 @@ def generate_legal_agreement(request):
         token = request.session.get("access_token")
         user_id = request.session.get("user_id")
         user_type = request.session.get("user_type")
+
 
         body = json.loads(request.body)
     except json.JSONDecodeError:
