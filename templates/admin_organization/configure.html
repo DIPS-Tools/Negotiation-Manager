@@ -441,6 +441,9 @@
         </div>
     </div>
 
+    <div id="send-feedback" role="status" aria-live="polite"
+         style="display:none;position:fixed;top:24px;right:24px;z-index:11000;max-width:420px;"></div>
+
     <!-- ODRL Diff Modal (read-only, like Merge Contract Versions) -->
     <div id="odrl-diff-modal" class="diff-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:10050;overflow:auto;">
         <div class="diff-modal-content compare-last-changes-content" style="max-width: 1100px;z-index:10051;margin:60px auto;">
@@ -2786,8 +2789,23 @@
             });
 
 
+            let sendFeedbackTimer = null;
 
+            function showSendFeedback(message, isSuccess) {
+                const feedback = $('#send-feedback');
+                const alertClass = isSuccess ? 'alert-success' : 'alert-danger';
+                feedback
+                    .stop(true, true)
+                    .removeClass('alert-success alert-danger')
+                    .addClass(`alert ${alertClass}`)
+                    .text(message)
+                    .fadeIn(150);
 
+                window.clearTimeout(sendFeedbackTimer);
+                sendFeedbackTimer = window.setTimeout(function () {
+                    feedback.fadeOut(250);
+                }, isSuccess ? 5000 : 10000);
+            }
 
 function doSendNow() {
                 const jsonData = getFormData();
@@ -2806,6 +2824,11 @@ function doSendNow() {
                     data: JSON.stringify(jsonData),
                     success: function (response) {
                         console.log('Policy creation successful:', response);
+                        const userRole = $('#user-role-text').val();
+                        const successMessage = userRole === 'consumer'
+                            ? 'Your request has been sent successfully to the provider.'
+                            : 'Your offer has been sent successfully to the consumer.';
+                        showSendFeedback(successMessage, true);
                         updateNegotiationsTable();
                         updateFinishedNegotiationsTable();
                         modal.style.display = "none";
@@ -2814,6 +2837,11 @@ function doSendNow() {
                     },
                     error: function (xhr, status, error) {
                         console.error('Error creating policy:', error);
+                        const itemName = $('#user-role-text').val() === 'consumer' ? 'request' : 'offer';
+                        showSendFeedback(
+                            `We could not send your ${itemName}. Please try again or contact an administrator if the problem continues.`,
+                            false
+                        );
                     },
                     complete: function () {
                         window._sendingInProgress = false;
