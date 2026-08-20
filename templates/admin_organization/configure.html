@@ -3698,7 +3698,7 @@ function doSendNow() {
                 $.ajax({
                     type: 'POST',
                     url: "{% url 'datacontrollersavesignature' %}",
-                    headers: { 'X-CSRFToken': getCookie('csrftoken'),
+                    headers: { 'X-CSRFToken': '{{ csrf_token }}',
                     'negotiationid': $('#negotiation-id-text').val()
                     },
                     data: { signature: signatureData },
@@ -3811,7 +3811,7 @@ function doSendNow() {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'X-CSRFToken': getCookie('csrftoken')  // Include CSRF token for CSRF protection
+                            'X-CSRFToken': '{{ csrf_token }}'  // Include CSRF token for CSRF protection
                         },
                         body: JSON.stringify({ party, action, negotiationId }) // Include party, action, and negotiationId in the body
                     });
