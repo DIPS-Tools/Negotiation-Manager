@@ -20,13 +20,9 @@ else:
     from telnetlib3 import EC
 
 from owlready2 import owl, default_world
-import rdflib
-from rdflib import Graph, Namespace, BNode, URIRef, RDF, Literal
+from rdflib import Graph, Namespace, BNode, URIRef, RDF
 from rdflib.collection import Collection
 from rdflib.namespace import NamespaceManager
-from collections import defaultdict
-
-import json
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -963,7 +959,7 @@ def convert_list_to_odrl_jsonld_no_user(data_list):
                     "constraint": [],
                 }
             if "query" in data:
-                if data["query"] is not '':
+                if data["query"] != '':
                     odrl_jsonld["constraint"].append(
                         {
                             "leftOperand": "ex:query",

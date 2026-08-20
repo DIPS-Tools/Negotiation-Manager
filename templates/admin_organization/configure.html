@@ -2268,6 +2268,12 @@
                     error: function (xhr, status, error) {
                       console.error('Error creating policy:', error);
                       alert("Failed to generate Data SharingAgreement. Please try again.");
+                      if (window._sendAfterRegenerate) {
+                        window._sendAfterRegenerate = false;
+                        window._suppressMergeModalOnce = false;
+                        window._sendingInProgress = false;
+                        $('#sending-spinner').css('display', 'none');
+                      }
                     },
                     complete: function () {
                       $button[0]?.style.removeProperty('background-color');
@@ -2676,6 +2682,7 @@
 
             const agreementGenerationButton = $('#agreement-generation');
             let agreementPayloadSignature = null;
+            let isCompareDiffPending = false;
 
             function updateTextEditedBadge() {
                 try {
@@ -2691,7 +2698,8 @@
             }
 
             function setAgreementGenerationEnabled(enabled) {
-                if (enabled) {
+                const shouldEnable = !!enabled && !isCompareDiffPending;
+                if (shouldEnable) {
                     agreementGenerationButton.prop('disabled', false);
                     agreementGenerationButton.css('opacity', '1');
                     agreementGenerationButton.css('cursor', 'pointer');
@@ -2735,6 +2743,10 @@
             }
 
             function evaluateAgreementGenerationState() {
+                if (isCompareDiffPending) {
+                    setAgreementGenerationEnabled(false);
+                    return;
+                }
                 if (!agreementPayloadBaseline) {
                     setAgreementGenerationEnabled(true);
                     return;
@@ -2812,6 +2824,9 @@ function doSendNow() {
 
             // Function to handle button click
             $('#submit-details').click(function () {
+                if (window._sendingInProgress) {
+                    return;
+                }
                 window._sendingInProgress = true;
                 try { $('#sending-spinner').css('display','flex'); } catch(e) {}
                 // Do not allow send while comparison/merge is pending
@@ -2839,10 +2854,13 @@ function doSendNow() {
                     const useRegenerated = confirm('You modified the agreement text! Regenerate agreement text from policy before sending?\nOK = Regenerate (Replace edited text) and Send! \nCancel = Use edited text and Send');
                     if (useRegenerated) {
                         // Refresh derived sections first, then regenerate (skip merge UI)
-                        gatherAgreementData(true).always(function () {
+                        gatherAgreementData(true).done(function () {
                             window._suppressMergeModalOnce = true;
                             window._sendAfterRegenerate = true;
                             handleAgreementGeneration.call($('#agreement-generation')[0]);
+                        }).fail(function () {
+                            window._sendingInProgress = false;
+                            $('#sending-spinner').css('display', 'none');
                         });
                         return;
                     }
@@ -2853,10 +2871,13 @@ function doSendNow() {
 
                 if (payloadChanged) {
                     // Structural changes → gather, then regenerate (skip merge UI), then send
-                    gatherAgreementData(true).always(function () {
+                    gatherAgreementData(true).done(function () {
                         window._suppressMergeModalOnce = true;
                         window._sendAfterRegenerate = true;
                         handleAgreementGeneration.call($('#agreement-generation')[0]);
+                    }).fail(function () {
+                        window._sendingInProgress = false;
+                        $('#sending-spinner').css('display', 'none');
                     });
                     return;
                 }
@@ -3165,7 +3186,7 @@ function doSendNow() {
             // Initial binding
             bindNegotiationRowClickEvent();
 
-            $('.createRequestBtn').click(function () {
+            $('.createRequestBtn[data-offer-id]').click(function () {
                 console.log('click request button')
                 // Get the offer details from the clicked row
                 var negotiationId = $(this).data('negotiation-id');
@@ -4405,7 +4426,7 @@ function doSendNow() {
 
 
             $('#fieldset-dpw').on('click', '#upload-dpw', function () {
-                dpwFileInput.click(); // trigger hidden file input
+                document.getElementById('dpwFileInput').click(); // trigger hidden file input
                 window.console.log('Upload DPW button clicked');
             });
 
@@ -4719,7 +4740,6 @@ function doSendNow() {
                 changeCount: null,
                 response: null
             };
-            let isCompareDiffPending = false;
             let lastResolvedDiff = null;
             let lastComparisonResponse = null;
 
@@ -4749,11 +4769,15 @@ function doSendNow() {
                     lastResolvedDiff = null;
                     lastComparisonResponse = null;
                 }
-                agreementGenerationButton.prop('disabled', isPending);
                 agreementGenerationButton.attr('title', isPending ? 'Resolve pending text changes before generating the agreement.' : '');
                 agreementTextarea.prop('readonly', isPending);
                 agreementTextarea.toggleClass('readonly-lock', isPending);
                 updateCompareButtonState();
+                if (isPending) {
+                    setAgreementGenerationEnabled(false);
+                } else {
+                    evaluateAgreementGenerationState();
+                }
             }
 
             setDiffPending(false);
