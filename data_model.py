@@ -62,7 +62,7 @@ class User(MongoObject):
     last_name: Optional[str] = None
     name: Optional[str] = None
     username: Optional[str] = None
-    type: Optional[PartyType] = None
+    type: Optional[List[PartyType]] = None
     email: Optional[EmailStr] = None
     password: Optional[str] = Field(default=None)
     # organization: Optional[str] = Field(default=None)
@@ -72,6 +72,21 @@ class User(MongoObject):
     vat_no: Optional[str] = Field(default=None)  # VAT account if possible
     position_title: Optional[str] = Field(default=None)
     phone: Optional[str] = Field(default=None)
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_types(cls, value):
+        if value is None:
+            return None
+        values = value if isinstance(value, (list, tuple, set)) else [value]
+        normalized = []
+        for role in values:
+            if isinstance(role, Enum):
+                role = role.value
+            role = str(role).strip().lower()
+            if role and role not in normalized:
+                normalized.append(role)
+        return normalized or None
 
     @model_validator(mode="before")
     @classmethod

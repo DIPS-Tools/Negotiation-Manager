@@ -113,10 +113,28 @@ REGISTRATION_FORM_FIELDS = [
 
 
 def _registration_form_data(post_data):
-    return {
-        field: (post_data.get(field) or "").strip()
-        for field in REGISTRATION_FORM_FIELDS
-    }
+    data = {field: (post_data.get(field) or "").strip() for field in REGISTRATION_FORM_FIELDS}
+    data["user_type"] = post_data.getlist("user_type")
+    return data
+
+
+def _normalize_user_roles(value):
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    return list(dict.fromkeys(
+        str(role).strip().lower() for role in values
+        if str(role).strip().lower() in {"consumer", "provider"}
+    ))
+
+
+def _selected_user_role(value, requested=None):
+    roles = _normalize_user_roles(value)
+    requested = (requested or "").strip().lower()
+    return requested if requested in roles else (roles[0] if roles else None)
+
+
+def _current_user_role(request):
+    return _selected_user_role(request.session.get("user_type"),
+                               request.session.get("active_user_role"))
 
 
 def _email_exists_response_value(data):
@@ -418,7 +436,7 @@ def register(request):
         username = form_data["username"]
         password = request.POST.get("password")
         confirm_password = request.POST.get("confirmpassword")
-        user_type = form_data["user_type"]  # Default to 'consumer' if not provided
+        user_type = _normalize_user_roles(form_data["user_type"])
         organization = form_data["organization"]
         # distinctive_title = request.POST.get("distinctive_title")
         incorporation = form_data["incorporation"]
@@ -447,6 +465,10 @@ def register(request):
         }
 
         master_password = os.getenv("MASTER_PASSWORD", "master_password")
+
+        if not user_type:
+            messages.error(request, "Select at least one user type.")
+            return render(request, "register_login/sign-up.html", {"form_data": form_data})
 
         if not first_name:
             messages.error(request, "First name cannot be empty.")
@@ -661,6 +683,14 @@ def negotiation(request):
     if not token or not user_id:
         return _handle_expired_session(request)
 
+    user_roles = _normalize_user_roles(user_type)
+    active_role = _selected_user_role(
+        user_roles, request.GET.get("role", request.session.get("active_user_role")))
+    if not active_role:
+        return _handle_expired_session(request)
+    request.session["user_type"] = user_roles
+    request.session["active_user_role"] = active_role
+    user_type = active_role
     selected_negotiation_id = request.GET.get("negotiation_id", None)
 
     populate_graph((os.path.join(settings.MEDIA_ROOT, "default_ontology/ODRL_DPV.rdf")), "xml")
@@ -736,6 +766,7 @@ def negotiation(request):
         "offers": filtered_offers,
         "user": user_id,
         "user_type": user_type,
+        "user_roles": user_roles,
         "selected_negotiation_id": selected_negotiation_id,
     }
     return render(request, "admin_organization/configure.html", context=context)
@@ -746,7 +777,7 @@ def get_negotiations(request):
     # Ensure user is authenticated via token in session
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
-    user_type = request.session.get("user_type")
+    user_type = _current_user_role(request)
 
     # Construct API endpoint URL for fetching all negotiations
     negotiations_url = f"{API_BASE_URL}/negotiation"
@@ -765,6 +796,9 @@ def get_negotiations(request):
         data = negotiations_res.json()
         # print(f"Negotiations data: {data}")
 
+        # Each dashboard lists negotiations where this account is that party.
+        data = [item for item in data
+                if str(item.get(f"{user_type}_id")) == str(user_id)]
         return JsonResponse({"negotiations": data})
 
     except Exception as e:
@@ -776,12 +810,14 @@ def get_negotiations(request):
 @keycloak_login_required
 def get_offer(request):
     print('calling get_offer')
-    offer_id = request.GET["offer_id"]
+    offer_id = request.GET.get("offer_id", "")
+    if not re.fullmatch(r"[0-9a-fA-F]{24}", offer_id):
+        return JsonResponse({"error": "A valid offer ID is required."}, status=400)
 
     # Ensure user is authenticated via token in session
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
-    user_type = request.session.get("user_type")
+    user_type = _current_user_role(request)
 
     # Construct API endpoint URL
     endpoint_url = f"{API_BASE_URL}/provider/offer/{offer_id}"
@@ -799,7 +835,8 @@ def get_offer(request):
         # print(f"Offers response content: {response.text}")
         data = response.json()
 
-        odrl_policy = data.get("odrl_policy")
+        odrl_policy = data.get("odrl_policy") or {}
+        data["odrl_policy"] = odrl_policy
         if odrl_policy and "data" in odrl_policy:
             print(f'data from get_offer: {odrl_policy["data"]}')
         else:
@@ -822,7 +859,9 @@ def get_offer(request):
         # Handle request exceptions
         # You can log the error or handle it as needed
         print(f'Error fetching offer {offer_id}: {e}')
-        return None
+        upstream = getattr(e, "response", None)
+        status_code = upstream.status_code if upstream is not None else 502
+        return JsonResponse({"error": "Could not fetch the offer."}, status=status_code)
 
 
 @keycloak_login_required
@@ -844,7 +883,7 @@ def get_negotiation_last_policy(request, negotiation_id=None, return_json=True):
     # Ensure user is authenticated via token in session
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
-    user_type = request.session.get("user_type")
+    user_type = _current_user_role(request)
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -954,7 +993,7 @@ def update_policy(request):
     # Ensure user is authenticated via token in session
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
-    user_type = request.session.get("user_type")
+    user_type = _current_user_role(request)
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -1092,7 +1131,7 @@ def create_policy(request):
     # Ensure user is authenticated via token in session
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
-    user_type = request.session.get("user_type")
+    user_type = _current_user_role(request)
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -1158,7 +1197,7 @@ def create_policy_from_upload(request):
     # Ensure user is authenticated via token in session
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
-    user_type = request.session.get("user_type")
+    user_type = _current_user_role(request)
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -1537,7 +1576,7 @@ def updatenegotiation(request):
     # Ensure user is authenticated via token in session
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
-    user_type = request.session.get("user_type")
+    user_type = _current_user_role(request)
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -1642,7 +1681,7 @@ async def save_signature(request):
 
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
-    user_role = request.session.get("user_type")
+    user_role = _current_user_role(request)
 
     print(f"save_signature function, user_id={user_id}, user_role = {user_role}, "
           f"negotiation_id={negotiation_id} \n signature_data={signature_data}")
@@ -1761,7 +1800,7 @@ def gather_agreement_inputs(request):
     # Ensure user is authenticated via token in session
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
-    user_type = request.session.get("user_type")
+    user_type = _current_user_role(request)
 
     if policy_type == "request":
         payload["consumer_id"] = user_id
@@ -1926,7 +1965,7 @@ def generate_legal_agreement(request):
     try:
         token = request.session.get("access_token")
         user_id = request.session.get("user_id")
-        user_type = request.session.get("user_type")
+        user_type = _current_user_role(request)
 
 
         body = json.loads(request.body)
@@ -2008,7 +2047,7 @@ def create_agent_record(request):
     # Ensure user is authenticated via token in session
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
-    user_type = request.session.get("user_type")
+    user_type = _current_user_role(request)
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -2060,7 +2099,7 @@ def get_agent_record(request):
     # Ensure user is authenticated via token in session
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
-    user_type = request.session.get("user_type")
+    user_type = _current_user_role(request)
 
     headers = {
         "Authorization": f"Bearer {token}",

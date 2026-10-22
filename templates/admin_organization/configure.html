@@ -16,6 +16,14 @@
                     <input class="form-check-input" type="checkbox" role="switch" id="switchPreferences">
                     <label class="form-check-label" for="switchPreferences">Use Preferences and Recommender Agent Records</label>
                 </div>
+                {% if user_roles|length > 1 %}
+                <div class="mt-3" aria-label="Choose negotiation role">
+                    <span class="me-2">Act as:</span>
+                    {% for role in user_roles %}
+                    <a class="btn btn-sm {% if user_type == role %}btn-primary{% else %}btn-outline-primary{% endif %} me-1" href="?role={{ role }}">{{ role|title }}</a>
+                    {% endfor %}
+                </div>
+                {% endif %}
                 <div class="row justify-content-center">
                     <div class="col-md-12">
                         <!-- Grid View Table -->
@@ -3321,7 +3329,11 @@ function doSendNow() {
                             console.log('Response from server:', data);
                             $('#loading-spinner').hide();
 
-                            offerId = data.offer_id;
+                            offerId = data._id || data.id || data.offer_id;
+                            if (typeof offerId !== 'string' || !/^[0-9a-fA-F]{24}$/.test(offerId)) {
+                                alert('The upload response did not contain a valid offer ID. Refresh the negotiations list before retrying.');
+                                return;
+                            }
                             console.log('offerId from createNewRequestBtn', offerId);
                             endpointUrl = 'offer?offer_id=' + offerId;
                             global_policy_type = "offer";

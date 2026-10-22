@@ -8,7 +8,7 @@ def build_full_name(first_name: Optional[str], last_name: Optional[str]) -> Opti
     return " ".join(parts) or None
 
 
-def guess_user_type_from_claims(claims: Dict[str, Any]) -> str:
+def guess_user_type_from_claims(claims: Dict[str, Any]) -> list[str]:
     email = (claims.get("email") or claims.get("preferred_username") or "").lower()
     preferred_username = (claims.get("preferred_username") or "").lower()
     role_values = []
@@ -19,8 +19,18 @@ def guess_user_type_from_claims(claims: Dict[str, Any]) -> str:
         role_values.extend(str(role).lower() for role in ((client_access or {}).get("roles") or []))
 
     if "provider" in role_values or "provider" in email or "provider" in preferred_username:
-        return "provider"
-    return "consumer"
+        return ["provider"]
+    return ["consumer"]
+
+
+def normalize_user_types(value: Any) -> list[str]:
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    result = []
+    for role in values:
+        role = str(role).strip().lower()
+        if role in {"consumer", "provider"} and role not in result:
+            result.append(role)
+    return result
 
 
 def _claim_attribute_value(claims: Dict[str, Any], *keys: str) -> Optional[Any]:
@@ -64,7 +74,7 @@ def _build_placeholder_user(claims: Dict[str, Any]) -> Dict[str, Any]:
     last_name = (claims.get("family_name") or "").strip() or "miss value"
 
     display_name = build_full_name(first_name, last_name) or claims.get("name") or email or "miss value"
-    user_type = _clean_optional_string(_claim_attribute_value(claims, "user_type", "type")) or guess_user_type_from_claims(claims)
+    user_type = normalize_user_types(_claim_attribute_value(claims, "user_type", "type")) or guess_user_type_from_claims(claims)
     organization = _normalize_organization_claim(_claim_attribute_value(claims, "Organization ", "organization")) or ["miss value"]
     incorporation = _clean_optional_string(_claim_attribute_value(claims, "incorporation")) or "miss value"
 
@@ -98,7 +108,13 @@ def _build_update_fields(user: Dict[str, Any], claims: Dict[str, Any]) -> Dict[s
     first_name = (claims.get("given_name") or user.get("first_name") or "").strip() or None
     last_name = (claims.get("family_name") or user.get("last_name") or "").strip() or None
     display_name = build_full_name(first_name, last_name) or claims.get("name") or claims.get("preferred_username")
-    user_type = _clean_optional_string(_claim_attribute_value(claims, "user_type", "type")) or guess_user_type_from_claims(claims)
+    # Tokens can omit user_type or contain stale single-role claims. Login
+    # must not remove roles that were assigned during registration/profile edits.
+    existing_roles = normalize_user_types(user.get("type"))
+    claimed_roles = normalize_user_types(_claim_attribute_value(claims, "user_type", "type"))
+    user_type = list(dict.fromkeys(existing_roles + claimed_roles))
+    if not user_type:
+        user_type = guess_user_type_from_claims(claims)
     organization = _normalize_organization_claim(_claim_attribute_value(claims, "organization"))
     incorporation = _clean_optional_string(_claim_attribute_value(claims, "incorporation"))
     address = _clean_optional_string(_claim_attribute_value(claims, "address"))

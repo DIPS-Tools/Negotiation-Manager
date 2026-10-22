@@ -2912,6 +2912,8 @@ async def get_upcast_offer(
 ):
     print("/provider/offer/{offer_id}  -> get_upcast_offer")
     # Convert offer_id to ObjectId
+    if not ObjectId.is_valid(offer_id):
+        raise HTTPException(status_code=400, detail="Invalid offer ID")
     offer_object_id = ObjectId(offer_id)
     if secure:
         # Update to check ownership

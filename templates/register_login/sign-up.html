@@ -61,12 +61,17 @@
 
             <div class="mb-4">
               <label for="user_type" class="form-label">User type <span class="text-danger">*</span></label>
-              <select class="form-select" id="user_type" name="user_type" aria-label="Select user type" required>
-                <option value="" {% if not form_data.user_type %}selected{% endif %} disabled>Select user type</option>
-                <option value="consumer" {% if form_data.user_type == "consumer" %}selected{% endif %}>Consumer</option>
-                <option value="provider" {% if form_data.user_type == "provider" %}selected{% endif %}>Provider</option>
-              </select>
-              <div id="userTypeHelp" class="form-text">Select your user type.</div>
+              <div id="user_type" aria-describedby="userTypeHelp">
+                <div class="form-check">
+                  <input class="form-check-input role-checkbox" type="checkbox" id="consumer_role" name="user_type" value="consumer" {% if "consumer" in form_data.user_type %}checked{% endif %}>
+                  <label class="form-check-label" for="consumer_role">Consumer</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input role-checkbox" type="checkbox" id="provider_role" name="user_type" value="provider" {% if "provider" in form_data.user_type %}checked{% endif %}>
+                  <label class="form-check-label" for="provider_role">Provider</label>
+                </div>
+              </div>
+              <div id="userTypeHelp" class="form-text">Select one or both roles.</div>
             </div>
 
             <div class="mb-4">
@@ -188,6 +193,14 @@
         available: "Username is available."
       }
     ];
+
+    form.addEventListener("submit", function (event) {
+      if (!form.querySelector("input[name='user_type']:checked")) {
+        event.preventDefault();
+        document.getElementById("userTypeHelp").textContent = "Select at least one user type.";
+        document.getElementById("userTypeHelp").classList.add("text-danger");
+      }
+    });
 
     function setFieldState(check, state, message) {
       check.output.textContent = message || "";
